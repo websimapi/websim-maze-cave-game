@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 
 document.addEventListener('DOMContentLoaded', () => {
-    const canvas = document.getElementById('gameCanvas');
-    const ctx = canvas.getContext('2d');
+    const canvas2D = document.getElementById('gameCanvas2D');
+    const canvas3D = document.getElementById('gameCanvas3D');
+    const ctx = canvas2D.getContext('2d');
     const messageEl = document.getElementById('message');
     const toggleViewBtn = document.getElementById('toggleViewBtn');
     const restartBtn = document.getElementById('restartBtn');
@@ -11,8 +12,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const MAZE_COLS = 24;
     const MAZE_ROWS = 16;
 
-    canvas.width = MAZE_COLS * CELL_SIZE;
-    canvas.height = MAZE_ROWS * CELL_SIZE;
+    // Set dimensions for both canvases
+    canvas2D.width = MAZE_COLS * CELL_SIZE;
+    canvas2D.height = MAZE_ROWS * CELL_SIZE;
+    canvas3D.width = MAZE_COLS * CELL_SIZE; // Can be different if desired
+    canvas3D.height = MAZE_ROWS * CELL_SIZE; // Can be different if desired
 
     const WALL_COLOR = '#504A4B';
     const PLAYER_COLOR = '#FFD700'; // For 2D player
@@ -24,13 +28,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const WALL_HEIGHT_3D = CELL_SIZE;
     const WALL_THICKNESS_3D = CELL_SIZE * 0.1;
 
-
     let maze;
     let player; // Will store {r, c, orientation}
     let startPos;
     let endPos;
     let gameOver = false;
     let is3DView = false;
+    let threeDMazeNeedsRebuild = true; // Flag to indicate 3D geometry needs update
 
     // --- Audio Handling ---
     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -68,11 +72,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (threeJSInitialized) return;
 
         scene = new THREE.Scene();
-        camera = new THREE.PerspectiveCamera(75, canvas.width / canvas.height, 0.1, CELL_SIZE * MAZE_COLS * 2);
+        camera = new THREE.PerspectiveCamera(75, canvas3D.width / canvas3D.height, 0.1, CELL_SIZE * MAZE_COLS * 2);
         
-        renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
-        renderer.setSize(canvas.width, canvas.height);
-        renderer.setClearColor(0x000000, 0); // Transparent clear color so 2D background shows if needed (though 3D will cover)
+        // Use canvas3D for the WebGLRenderer
+        renderer = new THREE.WebGLRenderer({ canvas: canvas3D, antialias: true });
+        renderer.setSize(canvas3D.width, canvas3D.height);
+        // The canvas CSS background-color (#333333) will show through transparent areas
+        renderer.setClearColor(0x000000, 0); 
 
         wallMaterial3D = new THREE.MeshBasicMaterial({ color: WALL_COLOR });
         floorMaterial3D = new THREE.MeshBasicMaterial({ color: FLOOR_COLOR_3D });
@@ -86,7 +92,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function setup3DScene() {
-        if (!threeJSInitialized) initThreeJS();
+        // Ensure Three.js core components are initialized (renderer, scene, camera)
+        // This function focuses on populating the scene with maze geometry.
+        if (!threeJSInitialized) {
+             // This case should ideally be handled by the caller (e.g. toggleViewMode or init)
+             // ensuring initThreeJS() is called first.
+            console.warn("setup3DScene called before initThreeJS. Initializing now.");
+            initThreeJS();
+        }
 
         // Clear previous maze objects
         while(mazeObjects3D.children.length > 0){ 
@@ -164,6 +177,7 @@ document.addEventListener('DOMContentLoaded', () => {
             endPos.r * CELL_SIZE + CELL_SIZE / 2
         );
         mazeObjects3D.add(endMarker);
+        threeDMazeNeedsRebuild = false; // Mark 3D scene as up-to-date
     }
     
     function render3DView() {
@@ -295,10 +309,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function draw2DView() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height); 
+        ctx.clearRect(0, 0, canvas2D.width, canvas2D.height); 
         // Ensure canvas background (cave floor) is drawn if not transparent
         ctx.fillStyle = FLOOR_COLOR_3D; // Use same as 3D floor for consistency
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillRect(0, 0, canvas2D.width, canvas2D.height);
 
         drawMaze2D();
         drawStartEnd2D();
@@ -309,7 +323,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function redrawCurrentView() {
         if (gameOver && !is3DView) { // Don't clear canvas if game over in 2D to show final state
              // For 3D, render one last time if needed, or do nothing.
-             if(is3DView && renderer) renderer.render(scene, camera); // render last frame
+             if(is3DView && renderer && scene && camera) renderer.render(scene, camera); // render last frame
              return;
         }
 
@@ -443,20 +457,31 @@ document.addEventListener('DOMContentLoaded', () => {
     function toggleViewMode() {
         is3DView = !is3DView;
         if (is3DView) {
+            canvas2D.style.display = 'none';
+            canvas3D.style.display = 'block';
             toggleViewBtn.textContent = "Switch to 2D View";
             if (!threeJSInitialized) {
-                initThreeJS(); // Initialize if not already
+                initThreeJS(); 
+                // threeDMazeNeedsRebuild should be true, so setup3DScene will be called below
             }
-            if (!mazeObjects3D.children.length) { // If scene is empty (e.g. after restart and toggle)
-                 setup3DScene();
+            if (threeDMazeNeedsRebuild) { // If maze changed or first time in 3D
+                 setup3DScene(); // Populate the 3D scene with maze geometry
             }
         } else {
+            canvas3D.style.display = 'none';
+            canvas2D.style.display = 'block';
             toggleViewBtn.textContent = "Switch to 3D View";
+            // 2D view will be redrawn by redrawCurrentView()
         }
-        gameOver = false; // Reset game over state when toggling, effectively a soft restart of view
-        messageEl.textContent = "Use arrow keys or WASD to move."; // Reset message
-        messageEl.style.color = "#76c7c0";
-        // Player position and orientation are preserved.
+        // gameOver = false; // Resetting gameOver on view toggle might be confusing if player just won.
+                           // Consider if this is desired behavior. For now, keep as is.
+        messageEl.textContent = "Use arrow keys or WASD to move."; 
+        if (gameOver) { // If game was over, re-display win message
+             messageEl.textContent = "You found the exit! Congratulations!";
+             messageEl.style.color = END_COLOR;
+        } else {
+            messageEl.style.color = "#76c7c0";
+        }
         redrawCurrentView();
     }
 
@@ -468,6 +493,7 @@ document.addEventListener('DOMContentLoaded', () => {
         await loadSound('win', '/win_chime.mp3');
 
         maze = generateMaze(MAZE_ROWS, MAZE_COLS);
+        threeDMazeNeedsRebuild = true; // New maze means 3D scene needs rebuilding
         
         startPos = { r: 0, c: 0 };
         endPos = { r: MAZE_ROWS - 1, c: MAZE_COLS - 1 };
@@ -479,10 +505,14 @@ document.addEventListener('DOMContentLoaded', () => {
         player = { ...startPos, orientation: 0 }; // 0:N, 1:E, 2:S, 3:W
         gameOver = false;
         
-        if (is3DView) {
-            if (!threeJSInitialized) initThreeJS();
-            setup3DScene(); // Rebuild 3D scene for new maze
+        if (is3DView) { // If restarting while in 3D view
+            if (!threeJSInitialized) {
+                initThreeJS(); // Initialize core Three.js if it hasn't been yet
+            }
+            setup3DScene(); // Rebuild 3D maze geometry
         }
+        // If restarting in 2D view, 3D scene will be built when toggling to 3D,
+        // due to threeDMazeNeedsRebuild flag.
 
         redrawCurrentView();
         

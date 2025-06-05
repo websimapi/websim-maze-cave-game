@@ -34,12 +34,15 @@ h1 {
     background-color: #5a5a5a;
 }
 
-canvas {
+canvas { /* Common styles for both canvases */
     border: 3px solid #4a4a4a; /* Dark stone-like border */
     background-color: #333333; /* Cave floor color */
-    display: block;
-    /* margin: 15px auto; remove default margin to place controls above */
+    display: block; 
     box-shadow: 0 0 15px rgba(0,0,0,0.5);
+}
+
+#gameCanvas3D {
+    display: none; /* Initially hide the 3D canvas */
 }
 
 #message {
