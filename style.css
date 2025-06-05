@@ -15,34 +15,12 @@ h1 {
     text-shadow: 1px 1px 2px #000;
 }
 
-#controls {
-    margin-bottom: 15px;
-}
-
-#controls button {
-    background-color: #4a4a4a;
-    color: #e0e0e0;
-    border: 1px solid #666;
-    padding: 8px 15px;
-    margin: 0 5px;
-    cursor: pointer;
-    border-radius: 4px;
-    font-size: 0.9em;
-}
-
-#controls button:hover {
-    background-color: #5a5a5a;
-}
-
-canvas { /* Common styles for both canvases */
+canvas {
     border: 3px solid #4a4a4a; /* Dark stone-like border */
     background-color: #333333; /* Cave floor color */
-    display: block; 
+    display: block;
+    margin: 15px auto;
     box-shadow: 0 0 15px rgba(0,0,0,0.5);
-}
-
-#gameCanvas3D {
-    display: none; /* Initially hide the 3D canvas */
 }
 
 #message {
@@ -50,4 +28,28 @@ canvas { /* Common styles for both canvases */
     font-size: 1.2em;
     color: #76c7c0; /* A slightly mystical teal for messages */
     height: 20px; /* Reserve space for messages */
+}
+
+#viewToggle {
+    background-color: #4a4a4a;
+    color: #e0e0e0;
+    border: 2px solid #76c7c0;
+    padding: 10px 20px;
+    font-size: 1em;
+    cursor: pointer;
+    border-radius: 5px;
+    margin-bottom: 15px;
+    transition: all 0.3s ease;
+}
+
+#viewToggle:hover {
+    background-color: #76c7c0;
+    color: #1e1e1e;
+}
+
+#threeContainer {
+    display: none;
+    border: 3px solid #4a4a4a;
+    margin: 15px auto;
+    box-shadow: 0 0 15px rgba(0,0,0,0.5);
 }

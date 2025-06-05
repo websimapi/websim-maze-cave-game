@@ -1,40 +1,26 @@
-import * as THREE from 'three';
-
 document.addEventListener('DOMContentLoaded', () => {
-    const canvas2D = document.getElementById('gameCanvas2D');
-    const canvas3D = document.getElementById('gameCanvas3D');
-    const ctx = canvas2D.getContext('2d');
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
     const messageEl = document.getElementById('message');
-    const toggleViewBtn = document.getElementById('toggleViewBtn');
-    const restartBtn = document.getElementById('restartBtn');
+    const viewToggle = document.getElementById('viewToggle');
 
     const CELL_SIZE = 25;
-    const MAZE_COLS = 24;
-    const MAZE_ROWS = 16;
+    const MAZE_COLS = 24; // Adjusted for typical screen widths
+    const MAZE_ROWS = 16; // Adjusted for typical screen heights
 
-    // Set dimensions for both canvases
-    canvas2D.width = MAZE_COLS * CELL_SIZE;
-    canvas2D.height = MAZE_ROWS * CELL_SIZE;
-    canvas3D.width = MAZE_COLS * CELL_SIZE; // Can be different if desired
-    canvas3D.height = MAZE_ROWS * CELL_SIZE; // Can be different if desired
+    canvas.width = MAZE_COLS * CELL_SIZE;
+    canvas.height = MAZE_ROWS * CELL_SIZE;
 
-    const WALL_COLOR = '#504A4B';
-    const PLAYER_COLOR = '#FFD700'; // For 2D player
-    const START_COLOR = '#32CD32';
-    const END_COLOR = '#DC143C';
-    const FLOOR_COLOR_3D = '#333333';
-    const CEILING_COLOR_3D = '#222222';
-    const PLAYER_HEIGHT_3D = CELL_SIZE * 0.5; // Camera height in 3D
-    const WALL_HEIGHT_3D = CELL_SIZE;
-    const WALL_THICKNESS_3D = CELL_SIZE * 0.1;
+    const WALL_COLOR = '#504A4B'; // Dark rock
+    const PLAYER_COLOR = '#FFD700'; // Gold (like a torch)
+    const START_COLOR = '#32CD32'; // Lime Green
+    const END_COLOR = '#DC143C';   // Crimson Red
 
     let maze;
-    let player; // Will store {r, c, orientation}
+    let player;
     let startPos;
     let endPos;
     let gameOver = false;
-    let is3DView = false;
-    let threeDMazeNeedsRebuild = true; // Flag to indicate 3D geometry needs update
 
     // --- Audio Handling ---
     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -61,162 +47,6 @@ document.addEventListener('DOMContentLoaded', () => {
             source.start(0);
         }
     }
-    
-    // --- Three.js Specifics ---
-    let scene, camera, renderer;
-    let wallMaterial3D, floorMaterial3D, ceilingMaterial3D, startMarkerMaterial3D, endMarkerMaterial3D;
-    let threeJSInitialized = false;
-    const mazeObjects3D = new THREE.Group(); // To hold maze walls, start/end markers for easy clearing
-
-    function initThreeJS() {
-        if (threeJSInitialized) return;
-
-        scene = new THREE.Scene();
-        camera = new THREE.PerspectiveCamera(75, canvas3D.width / canvas3D.height, 0.1, CELL_SIZE * MAZE_COLS * 2);
-        
-        // Use canvas3D for the WebGLRenderer
-        renderer = new THREE.WebGLRenderer({ canvas: canvas3D, antialias: true });
-        renderer.setSize(canvas3D.width, canvas3D.height);
-        // The canvas CSS background-color (#333333) will show through transparent areas
-        renderer.setClearColor(0x000000, 0); 
-
-        wallMaterial3D = new THREE.MeshBasicMaterial({ color: WALL_COLOR });
-        floorMaterial3D = new THREE.MeshBasicMaterial({ color: FLOOR_COLOR_3D });
-        ceilingMaterial3D = new THREE.MeshBasicMaterial({ color: CEILING_COLOR_3D });
-        startMarkerMaterial3D = new THREE.MeshBasicMaterial({ color: START_COLOR });
-        endMarkerMaterial3D = new THREE.MeshBasicMaterial({ color: END_COLOR });
-        
-        scene.add(mazeObjects3D);
-
-        threeJSInitialized = true;
-    }
-
-    function setup3DScene() {
-        // Ensure Three.js core components are initialized (renderer, scene, camera)
-        // This function focuses on populating the scene with maze geometry.
-        if (!threeJSInitialized) {
-             // This case should ideally be handled by the caller (e.g. toggleViewMode or init)
-             // ensuring initThreeJS() is called first.
-            console.warn("setup3DScene called before initThreeJS. Initializing now.");
-            initThreeJS();
-        }
-
-        // Clear previous maze objects
-        while(mazeObjects3D.children.length > 0){ 
-            mazeObjects3D.remove(mazeObjects3D.children[0]); 
-        }
-
-        // Floor
-        const floorGeometry = new THREE.PlaneGeometry(MAZE_COLS * CELL_SIZE, MAZE_ROWS * CELL_SIZE);
-        const floorMesh = new THREE.Mesh(floorGeometry, floorMaterial3D);
-        floorMesh.rotation.x = -Math.PI / 2; // Rotate to be horizontal
-        floorMesh.position.set( (MAZE_COLS * CELL_SIZE) / 2, 0, (MAZE_ROWS * CELL_SIZE) / 2 );
-        mazeObjects3D.add(floorMesh);
-
-        // Ceiling
-        const ceilingGeometry = new THREE.PlaneGeometry(MAZE_COLS * CELL_SIZE, MAZE_ROWS * CELL_SIZE);
-        const ceilingMesh = new THREE.Mesh(ceilingGeometry, ceilingMaterial3D);
-        ceilingMesh.rotation.x = Math.PI / 2;
-        ceilingMesh.position.set( (MAZE_COLS * CELL_SIZE) / 2, WALL_HEIGHT_3D, (MAZE_ROWS * CELL_SIZE) / 2 );
-        mazeObjects3D.add(ceilingMesh);
-
-        // Walls
-        for (let r = 0; r < MAZE_ROWS; r++) {
-            for (let c = 0; c < MAZE_COLS; c++) {
-                const cell = maze[r][c];
-                const wallHeight = WALL_HEIGHT_3D;
-                const wallThickness = WALL_THICKNESS_3D;
-
-                // Top wall
-                if (cell.walls.top) {
-                    const wallGeo = new THREE.BoxGeometry(CELL_SIZE + wallThickness, wallHeight, wallThickness);
-                    const wallMesh = new THREE.Mesh(wallGeo, wallMaterial3D);
-                    wallMesh.position.set(c * CELL_SIZE + CELL_SIZE / 2, wallHeight / 2, r * CELL_SIZE);
-                    mazeObjects3D.add(wallMesh);
-                }
-                // Bottom wall (only draw if it's an edge or not handled by cell below)
-                 if (cell.walls.bottom && r === MAZE_ROWS - 1) { // Draw bottom boundary walls
-                    const wallGeo = new THREE.BoxGeometry(CELL_SIZE + wallThickness, wallHeight, wallThickness);
-                    const wallMesh = new THREE.Mesh(wallGeo, wallMaterial3D);
-                    wallMesh.position.set(c * CELL_SIZE + CELL_SIZE / 2, wallHeight / 2, (r + 1) * CELL_SIZE);
-                    mazeObjects3D.add(wallMesh);
-                }
-                // Left wall
-                if (cell.walls.left) {
-                    const wallGeo = new THREE.BoxGeometry(wallThickness, wallHeight, CELL_SIZE + wallThickness);
-                    const wallMesh = new THREE.Mesh(wallGeo, wallMaterial3D);
-                    wallMesh.position.set(c * CELL_SIZE, wallHeight / 2, r * CELL_SIZE + CELL_SIZE / 2);
-                    mazeObjects3D.add(wallMesh);
-                }
-                 // Right wall (only draw if it's an edge or not handled by cell to the right)
-                if (cell.walls.right && c === MAZE_COLS -1) { // Draw right boundary walls
-                    const wallGeo = new THREE.BoxGeometry(wallThickness, wallHeight, CELL_SIZE + wallThickness);
-                    const wallMesh = new THREE.Mesh(wallGeo, wallMaterial3D);
-                    wallMesh.position.set((c + 1) * CELL_SIZE, wallHeight / 2, r * CELL_SIZE + CELL_SIZE / 2);
-                    mazeObjects3D.add(wallMesh);
-                }
-            }
-        }
-        
-        // Start and End Markers (small cubes on the floor)
-        const markerSize = CELL_SIZE * 0.5;
-        const markerGeo = new THREE.BoxGeometry(markerSize, markerSize, markerSize);
-        
-        const startMarker = new THREE.Mesh(markerGeo, startMarkerMaterial3D);
-        startMarker.position.set(
-            startPos.c * CELL_SIZE + CELL_SIZE / 2,
-            markerSize / 2,
-            startPos.r * CELL_SIZE + CELL_SIZE / 2
-        );
-        mazeObjects3D.add(startMarker);
-
-        const endMarker = new THREE.Mesh(markerGeo, endMarkerMaterial3D);
-        endMarker.position.set(
-            endPos.c * CELL_SIZE + CELL_SIZE / 2,
-            markerSize / 2,
-            endPos.r * CELL_SIZE + CELL_SIZE / 2
-        );
-        mazeObjects3D.add(endMarker);
-        threeDMazeNeedsRebuild = false; // Mark 3D scene as up-to-date
-    }
-    
-    function render3DView() {
-        if (!threeJSInitialized || !scene || !camera || !renderer) return;
-
-        // Position camera based on player
-        camera.position.set(
-            player.c * CELL_SIZE + CELL_SIZE / 2,
-            PLAYER_HEIGHT_3D,
-            player.r * CELL_SIZE + CELL_SIZE / 2
-        );
-
-        // Orient camera
-        // 0:N (-Z), 1:E (+X), 2:S (+Z), 3:W (-X)
-        // Three.js default camera looks along -Z.
-        // Player N (maze -r / three.js -Z): camera rotation.y = 0
-        // Player E (maze +c / three.js +X): camera rotation.y = -Math.PI / 2
-        // Player S (maze +r / three.js +Z): camera rotation.y = Math.PI
-        // Player W (maze -c / three.js -X): camera rotation.y = Math.PI / 2
-        switch (player.orientation) {
-            case 0: camera.rotation.y = 0; break; // North
-            case 1: camera.rotation.y = -Math.PI / 2; break; // East
-            case 2: camera.rotation.y = Math.PI; break; // South
-            case 3: camera.rotation.y = Math.PI / 2; break; // West
-        }
-        
-        // Ensure camera looks parallel to ground
-        camera.rotation.x = 0;
-        camera.rotation.z = 0;
-        camera.lookAt( // Calculate lookAt point
-            camera.position.x + Math.sin(camera.rotation.y) * (player.orientation === 2 || player.orientation === 0 ? -1 : 1) * CELL_SIZE, //Sign flip for N/S
-            PLAYER_HEIGHT_3D,
-            camera.position.z + Math.cos(camera.rotation.y) * (player.orientation === 2 || player.orientation === 0 ? -1 : 1) * CELL_SIZE  //Sign flip for N/S
-        );
-
-
-        renderer.render(scene, camera);
-    }
-
 
     // --- Maze Generation (Recursive Backtracking) ---
     function createGrid(rows, cols) {
@@ -246,18 +76,32 @@ document.addEventListener('DOMContentLoaded', () => {
             const { r, c } = currentCell;
             const neighbors = [];
 
+            // Check top
             if (r > 0 && !grid[r - 1][c].visited) neighbors.push(grid[r - 1][c]);
+            // Check right
             if (c < cols - 1 && !grid[r][c + 1].visited) neighbors.push(grid[r][c + 1]);
+            // Check bottom
             if (r < rows - 1 && !grid[r + 1][c].visited) neighbors.push(grid[r + 1][c]);
+            // Check left
             if (c > 0 && !grid[r][c - 1].visited) neighbors.push(grid[r][c - 1]);
 
             if (neighbors.length > 0) {
                 const nextCell = neighbors[Math.floor(Math.random() * neighbors.length)];
                 
-                if (nextCell.r < r) { currentCell.walls.top = false; nextCell.walls.bottom = false; } 
-                else if (nextCell.c > c) { currentCell.walls.right = false; nextCell.walls.left = false; } 
-                else if (nextCell.r > r) { currentCell.walls.bottom = false; nextCell.walls.top = false; } 
-                else if (nextCell.c < c) { currentCell.walls.left = false; nextCell.walls.right = false; }
+                // Remove walls
+                if (nextCell.r < r) { // Top neighbor
+                    currentCell.walls.top = false;
+                    nextCell.walls.bottom = false;
+                } else if (nextCell.c > c) { // Right neighbor
+                    currentCell.walls.right = false;
+                    nextCell.walls.left = false;
+                } else if (nextCell.r > r) { // Bottom neighbor
+                    currentCell.walls.bottom = false;
+                    nextCell.walls.top = false;
+                } else if (nextCell.c < c) { // Left neighbor
+                    currentCell.walls.left = false;
+                    nextCell.walls.right = false;
+                }
 
                 nextCell.visited = true;
                 stack.push(nextCell);
@@ -268,10 +112,10 @@ document.addEventListener('DOMContentLoaded', () => {
         return grid;
     }
 
-    // --- 2D Drawing Functions ---
-    function drawMaze2D() {
+    // --- Drawing Functions ---
+    function drawMaze() {
         ctx.strokeStyle = WALL_COLOR;
-        ctx.lineWidth = 2; 
+        ctx.lineWidth = 2; // Wall thickness
 
         for (let r = 0; r < MAZE_ROWS; r++) {
             for (let c = 0; c < MAZE_COLS; c++) {
@@ -279,78 +123,69 @@ document.addEventListener('DOMContentLoaded', () => {
                 const x = c * CELL_SIZE;
                 const y = r * CELL_SIZE;
 
-                if (cell.walls.top) { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + CELL_SIZE, y); ctx.stroke(); }
-                if (cell.walls.right) { ctx.beginPath(); ctx.moveTo(x + CELL_SIZE, y); ctx.lineTo(x + CELL_SIZE, y + CELL_SIZE); ctx.stroke(); }
-                if (cell.walls.bottom) { ctx.beginPath(); ctx.moveTo(x + CELL_SIZE, y + CELL_SIZE); ctx.lineTo(x, y + CELL_SIZE); ctx.stroke(); }
-                if (cell.walls.left) { ctx.beginPath(); ctx.moveTo(x, y + CELL_SIZE); ctx.lineTo(x, y); ctx.stroke(); }
+                if (cell.walls.top) {
+                    ctx.beginPath();
+                    ctx.moveTo(x, y);
+                    ctx.lineTo(x + CELL_SIZE, y);
+                    ctx.stroke();
+                }
+                if (cell.walls.right) {
+                    ctx.beginPath();
+                    ctx.moveTo(x + CELL_SIZE, y);
+                    ctx.lineTo(x + CELL_SIZE, y + CELL_SIZE);
+                    ctx.stroke();
+                }
+                if (cell.walls.bottom) {
+                    ctx.beginPath();
+                    ctx.moveTo(x + CELL_SIZE, y + CELL_SIZE);
+                    ctx.lineTo(x, y + CELL_SIZE);
+                    ctx.stroke();
+                }
+                if (cell.walls.left) {
+                    ctx.beginPath();
+                    ctx.moveTo(x, y + CELL_SIZE);
+                    ctx.lineTo(x, y);
+                    ctx.stroke();
+                }
             }
         }
     }
 
-    function drawRect2D(x, y, size, color) {
+    function drawRect(x, y, size, color) {
         ctx.fillStyle = color;
         ctx.fillRect(x * CELL_SIZE + CELL_SIZE * 0.15, y * CELL_SIZE + CELL_SIZE * 0.15, size * 0.7, size * 0.7);
     }
     
-    function drawCircle2D(x, y, radiusFraction, color) {
+    function drawCircle(x, y, radiusFraction, color) {
         ctx.fillStyle = color;
         ctx.beginPath();
-        ctx.arc( x * CELL_SIZE + CELL_SIZE / 2, y * CELL_SIZE + CELL_SIZE / 2, CELL_SIZE * radiusFraction, 0, Math.PI * 2);
+        ctx.arc(
+            x * CELL_SIZE + CELL_SIZE / 2,
+            y * CELL_SIZE + CELL_SIZE / 2,
+            CELL_SIZE * radiusFraction,
+            0, Math.PI * 2
+        );
         ctx.fill();
     }
 
-    function drawPlayer2D() {
-        drawCircle2D(player.c, player.r, 0.35, PLAYER_COLOR);
+    function drawPlayer() {
+        drawCircle(player.c, player.r, 0.35, PLAYER_COLOR);
     }
 
-    function drawStartEnd2D() {
-        drawRect2D(startPos.c, startPos.r, CELL_SIZE, START_COLOR);
-        drawRect2D(endPos.c, endPos.r, CELL_SIZE, END_COLOR);
+    function drawStartEnd() {
+        drawRect(startPos.c, startPos.r, CELL_SIZE, START_COLOR);
+        drawRect(endPos.c, endPos.r, CELL_SIZE, END_COLOR);
     }
 
-    function draw2DView() {
-        ctx.clearRect(0, 0, canvas2D.width, canvas2D.height); 
-        // Ensure canvas background (cave floor) is drawn if not transparent
-        ctx.fillStyle = FLOOR_COLOR_3D; // Use same as 3D floor for consistency
-        ctx.fillRect(0, 0, canvas2D.width, canvas2D.height);
-
-        drawMaze2D();
-        drawStartEnd2D();
-        drawPlayer2D();
+    function drawGame() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear canvas (background is cave floor)
+        drawMaze();
+        drawStartEnd();
+        drawPlayer();
     }
-    
-    // --- Unified Drawing Function ---
-    function redrawCurrentView() {
-        if (gameOver && !is3DView) { // Don't clear canvas if game over in 2D to show final state
-             // For 3D, render one last time if needed, or do nothing.
-             if(is3DView && renderer && scene && camera) renderer.render(scene, camera); // render last frame
-             return;
-        }
-
-        if (is3DView) {
-            if (!threeJSInitialized) {
-                initThreeJS();
-                setup3DScene(); // Build geometry first time
-            }
-            render3DView();
-        } else {
-            draw2DView();
-        }
-    }
-
 
     // --- Game Logic ---
-    function checkWinCondition() {
-        if (player.r === endPos.r && player.c === endPos.c) {
-            gameOver = true;
-            messageEl.textContent = "You found the exit! Congratulations!";
-            messageEl.style.color = END_COLOR;
-            playSound('win');
-            window.removeEventListener('keydown', handleKeyDown); 
-        }
-    }
-
-    function movePlayer2D(dr, dc) {
+    function movePlayer(dr, dc) {
         if (gameOver) return;
 
         const currentCell = maze[player.r][player.c];
@@ -358,170 +193,247 @@ document.addEventListener('DOMContentLoaded', () => {
         let newC = player.c + dc;
 
         let canMove = false;
-        if (dr === -1 && !currentCell.walls.top) canMove = true;    
-        if (dr === 1 && !currentCell.walls.bottom) canMove = true; 
-        if (dc === -1 && !currentCell.walls.left) canMove = true;   
-        if (dc === 1 && !currentCell.walls.right) canMove = true;  
+        if (dr === -1 && !currentCell.walls.top) canMove = true;    // Up
+        if (dr === 1 && !currentCell.walls.bottom) canMove = true; // Down
+        if (dc === -1 && !currentCell.walls.left) canMove = true;   // Left
+        if (dc === 1 && !currentCell.walls.right) canMove = true;  // Right
         
         if (canMove && newR >= 0 && newR < MAZE_ROWS && newC >= 0 && newC < MAZE_COLS) {
             player.r = newR;
             player.c = newC;
             playSound('footstep');
-            redrawCurrentView();
-            checkWinCondition();
+            
+            if (is3D) {
+                position3DPlayer();
+            } else {
+                drawGame();
+            }
+
+            if (player.r === endPos.r && player.c === endPos.c) {
+                gameOver = true;
+                messageEl.textContent = "You found the exit! Congratulations!";
+                messageEl.style.color = END_COLOR;
+                playSound('win');
+                window.removeEventListener('keydown', handleKeyDown);
+                if (controls) controls.unlock();
+            }
         }
     }
-
-    function turnPlayer3D(direction) { // -1 for left, 1 for right
-        if (gameOver) return;
-        player.orientation = (player.orientation + direction + 4) % 4;
-        playSound('footstep'); // Optional: different sound for turning? For now, use footstep.
-        redrawCurrentView();
-    }
-    
-    function movePlayer3D(isForward) {
-        if (gameOver) return;
-
-        const currentCell = maze[player.r][player.c];
-        let dr = 0, dc = 0;
-        const moveStep = isForward ? 1 : -1;
-
-        // Determine dr, dc based on orientation
-        // Player N (maze -r): dr = -1
-        // Player E (maze +c): dc = 1
-        // Player S (maze +r): dr = 1
-        // Player W (maze -c): dc = -1
-        switch (player.orientation) {
-            case 0: dr = -moveStep; break; // North
-            case 1: dc = moveStep; break;  // East
-            case 2: dr = moveStep; break;  // South
-            case 3: dc = -moveStep; break; // West
-        }
-        
-        let canMove = false;
-        if (player.orientation === 0) canMove = isForward ? !currentCell.walls.top : !maze[player.r-1]?.[player.c]?.walls.bottom; // Forward N, Backward S from cell above
-        if (player.orientation === 1) canMove = isForward ? !currentCell.walls.right : !maze[player.r]?.[player.c-1]?.walls.left; // Forward E, Backward W from cell left
-        if (player.orientation === 2) canMove = isForward ? !currentCell.walls.bottom : !maze[player.r+1]?.[player.c]?.walls.top; // Forward S, Backward N from cell below
-        if (player.orientation === 3) canMove = isForward ? !currentCell.walls.left : !maze[player.r]?.[player.c+1]?.walls.right; // Forward W, Backward E from cell right
-        
-        // A bit complex logic for backward, let's simplify wall checking:
-        // Always check the wall OF THE CURRENT CELL in the direction of movement.
-        // For moving backward, it's like moving forward from the target cell, but in reverse.
-        // So, if moving backward, check the wall of the TARGET cell that faces the current cell.
-
-        let targetR = player.r + dr;
-        let targetC = player.c + dc;
-
-        if (targetR < 0 || targetR >= MAZE_ROWS || targetC < 0 || targetC >= MAZE_COLS) {
-            canMove = false; // Out of bounds
-        } else {
-            if (dr === -1 && !currentCell.walls.top) canMove = true;      // Moving North (Up)
-            else if (dr === 1 && !currentCell.walls.bottom) canMove = true; // Moving South (Down)
-            else if (dc === -1 && !currentCell.walls.left) canMove = true;    // Moving West (Left)
-            else if (dc === 1 && !currentCell.walls.right) canMove = true;   // Moving East (Right)
-            else canMove = false; // Hit a wall in current cell's perspective
-        }
-
-
-        if (canMove) {
-            player.r = targetR;
-            player.c = targetC;
-            playSound('footstep');
-            redrawCurrentView();
-            checkWinCondition();
-        }
-    }
-
 
     function handleKeyDown(e) {
-        if (audioContext.state === 'suspended') audioContext.resume();
+        // Resume AudioContext on first interaction if it's suspended
+        if (audioContext.state === 'suspended') {
+            audioContext.resume();
+        }
+
         if (gameOver) return;
-
-        if (is3DView) {
-            switch (e.key) {
-                case 'ArrowUp': case 'w': movePlayer3D(true); e.preventDefault(); break;
-                case 'ArrowDown': case 's': movePlayer3D(false); e.preventDefault(); break;
-                case 'ArrowLeft': case 'a': turnPlayer3D(-1); e.preventDefault(); break;
-                case 'ArrowRight': case 'd': turnPlayer3D(1); e.preventDefault(); break;
-            }
-        } else { // 2D movement
-            switch (e.key) {
-                case 'ArrowUp': case 'w': movePlayer2D(-1, 0); e.preventDefault(); break;
-                case 'ArrowDown': case 's': movePlayer2D(1, 0); e.preventDefault(); break;
-                case 'ArrowLeft': case 'a': movePlayer2D(0, -1); e.preventDefault(); break;
-                case 'ArrowRight': case 'd': movePlayer2D(0, 1); e.preventDefault(); break;
-            }
+        switch (e.key) {
+            case 'ArrowUp': case 'w': movePlayer(-1, 0); e.preventDefault(); break;
+            case 'ArrowDown': case 's': movePlayer(1, 0); e.preventDefault(); break;
+            case 'ArrowLeft': case 'a': movePlayer(0, -1); e.preventDefault(); break;
+            case 'ArrowRight': case 'd': movePlayer(0, 1); e.preventDefault(); break;
         }
     }
-    
-    function toggleViewMode() {
-        is3DView = !is3DView;
-        if (is3DView) {
-            canvas2D.style.display = 'none';
-            canvas3D.style.display = 'block';
-            toggleViewBtn.textContent = "Switch to 2D View";
-            if (!threeJSInitialized) {
-                initThreeJS(); 
-                // threeDMazeNeedsRebuild should be true, so setup3DScene will be called below
-            }
-            if (threeDMazeNeedsRebuild) { // If maze changed or first time in 3D
-                 setup3DScene(); // Populate the 3D scene with maze geometry
-            }
-        } else {
-            canvas3D.style.display = 'none';
-            canvas2D.style.display = 'block';
-            toggleViewBtn.textContent = "Switch to 3D View";
-            // 2D view will be redrawn by redrawCurrentView()
-        }
-        // gameOver = false; // Resetting gameOver on view toggle might be confusing if player just won.
-                           // Consider if this is desired behavior. For now, keep as is.
-        messageEl.textContent = "Use arrow keys or WASD to move."; 
-        if (gameOver) { // If game was over, re-display win message
-             messageEl.textContent = "You found the exit! Congratulations!";
-             messageEl.style.color = END_COLOR;
-        } else {
-            messageEl.style.color = "#76c7c0";
-        }
-        redrawCurrentView();
+
+    // --- 3D View ---
+    let is3D = false;
+    let scene, camera, renderer, controls;
+    let threeContainer;
+    let walls3D = [];
+    let player3D, startMarker3D, endMarker3D;
+
+    // Import Three.js modules
+    let THREE, PointerLockControls;
+
+    async function loadThreeJS() {
+        const threeModule = await import('https://esm.sh/three@0.158.0');
+        THREE = threeModule;
+        const controlsModule = await import('https://esm.sh/three@0.158.0/examples/jsm/controls/PointerLockControls.js');
+        PointerLockControls = controlsModule.PointerLockControls;
     }
 
+    function create3DScene() {
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x1a1a1a);
+
+        camera = new THREE.PerspectiveCamera(75, canvas.width / canvas.height, 0.1, 1000);
+        
+        renderer = new THREE.WebGLRenderer();
+        renderer.setSize(canvas.width, canvas.height);
+        
+        threeContainer = document.createElement('div');
+        threeContainer.id = 'threeContainer';
+        threeContainer.appendChild(renderer.domElement);
+        canvas.parentNode.insertBefore(threeContainer, canvas.nextSibling);
+
+        controls = new PointerLockControls(camera, renderer.domElement);
+        
+        renderer.domElement.addEventListener('click', () => {
+            if (!gameOver && is3D) {
+                controls.lock();
+            }
+        });
+
+        // Add ambient light
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
+        scene.add(ambientLight);
+
+        // Add point light following player
+        const pointLight = new THREE.PointLight(0xffd700, 1, 10);
+        pointLight.position.set(0, 1, 0);
+        scene.add(pointLight);
+
+        build3DMaze();
+        position3DPlayer();
+    }
+
+    function build3DMaze() {
+        // Clear existing walls
+        walls3D.forEach(wall => scene.remove(wall));
+        walls3D = [];
+
+        const wallGeometry = new THREE.BoxGeometry(1, 2, 0.1);
+        const wallMaterial = new THREE.MeshLambertMaterial({ color: 0x504A4B });
+
+        for (let r = 0; r < MAZE_ROWS; r++) {
+            for (let c = 0; c < MAZE_COLS; c++) {
+                const cell = maze[r][c];
+                const x = c - MAZE_COLS / 2;
+                const z = r - MAZE_ROWS / 2;
+
+                if (cell.walls.top) {
+                    const wall = new THREE.Mesh(wallGeometry, wallMaterial);
+                    wall.position.set(x, 1, z - 0.5);
+                    scene.add(wall);
+                    walls3D.push(wall);
+                }
+                if (cell.walls.right) {
+                    const wall = new THREE.Mesh(wallGeometry, wallMaterial);
+                    wall.position.set(x + 0.5, 1, z);
+                    wall.rotation.y = Math.PI / 2;
+                    scene.add(wall);
+                    walls3D.push(wall);
+                }
+                if (cell.walls.bottom) {
+                    const wall = new THREE.Mesh(wallGeometry, wallMaterial);
+                    wall.position.set(x, 1, z + 0.5);
+                    scene.add(wall);
+                    walls3D.push(wall);
+                }
+                if (cell.walls.left) {
+                    const wall = new THREE.Mesh(wallGeometry, wallMaterial);
+                    wall.position.set(x - 0.5, 1, z);
+                    wall.rotation.y = Math.PI / 2;
+                    scene.add(wall);
+                    walls3D.push(wall);
+                }
+            }
+        }
+
+        // Add floor
+        const floorGeometry = new THREE.PlaneGeometry(MAZE_COLS, MAZE_ROWS);
+        const floorMaterial = new THREE.MeshLambertMaterial({ color: 0x333333 });
+        const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+        floor.rotation.x = -Math.PI / 2;
+        scene.add(floor);
+
+        // Add start and end markers
+        if (startMarker3D) scene.remove(startMarker3D);
+        if (endMarker3D) scene.remove(endMarker3D);
+
+        const startGeometry = new THREE.BoxGeometry(0.8, 0.1, 0.8);
+        const startMaterial = new THREE.MeshLambertMaterial({ color: 0x32CD32 });
+        startMarker3D = new THREE.Mesh(startGeometry, startMaterial);
+        startMarker3D.position.set(startPos.c - MAZE_COLS / 2, 0.05, startPos.r - MAZE_ROWS / 2);
+        scene.add(startMarker3D);
+
+        const endGeometry = new THREE.BoxGeometry(0.8, 0.1, 0.8);
+        const endMaterial = new THREE.MeshLambertMaterial({ color: 0xDC143C });
+        endMarker3D = new THREE.Mesh(endGeometry, endMaterial);
+        endMarker3D.position.set(endPos.c - MAZE_COLS / 2, 0.05, endPos.r - MAZE_ROWS / 2);
+        scene.add(endMarker3D);
+    }
+
+    function position3DPlayer() {
+        if (camera) {
+            camera.position.set(
+                player.c - MAZE_COLS / 2,
+                0.5,
+                player.r - MAZE_ROWS / 2
+            );
+        }
+    }
+
+    function animate3D() {
+        if (!is3D) return;
+        
+        renderer.render(scene, camera);
+        requestAnimationFrame(animate3D);
+    }
+
+    async function toggleView() {
+        if (!THREE) {
+            await loadThreeJS();
+        }
+
+        is3D = !is3D;
+        
+        if (is3D) {
+            if (!scene) {
+                create3DScene();
+            } else {
+                position3DPlayer();
+            }
+            canvas.style.display = 'none';
+            threeContainer.style.display = 'block';
+            viewToggle.textContent = 'Switch to 2D View';
+            messageEl.textContent = 'Click to look around. Use WASD to move in 3D!';
+            animate3D();
+        } else {
+            canvas.style.display = 'block';
+            if (threeContainer) threeContainer.style.display = 'none';
+            viewToggle.textContent = 'Switch to 3D View';
+            messageEl.textContent = 'Use arrow keys or WASD to move. Find the red exit!';
+            drawGame();
+        }
+    }
+
+    // --- Initialization ---
     async function init() {
         messageEl.textContent = "Use arrow keys or WASD to move. Find the red exit!";
         messageEl.style.color = "#76c7c0";
 
-        await loadSound('footstep', '/footstep_cave.mp3');
-        await loadSound('win', '/win_chime.mp3');
+        await loadSound('footstep', 'footstep_cave.mp3');
+        await loadSound('win', 'win_chime.mp3');
 
         maze = generateMaze(MAZE_ROWS, MAZE_COLS);
-        threeDMazeNeedsRebuild = true; // New maze means 3D scene needs rebuilding
         
         startPos = { r: 0, c: 0 };
         endPos = { r: MAZE_ROWS - 1, c: MAZE_COLS - 1 };
-        if (MAZE_ROWS -1 === 0 && MAZE_COLS -1 === 0) { // 1x1 maze, ensure end is distinct if possible
-            if (MAZE_COLS > 1) endPos = {r: 0, c: MAZE_COLS -1};
-            else if (MAZE_ROWS > 1) endPos = {r: MAZE_ROWS -1, c: 0};
+        if (MAZE_ROWS -1 === 0 && MAZE_COLS -1 === 0 && MAZE_COLS > 1) {
+           endPos = {r: 0, c: MAZE_COLS -1};
+        } else if (MAZE_ROWS -1 === 0 && MAZE_COLS -1 === 0 && MAZE_ROWS > 1) {
+           endPos = {r: MAZE_ROWS -1, c: 0};
         }
 
-        player = { ...startPos, orientation: 0 }; // 0:N, 1:E, 2:S, 3:W
+        player = { ...startPos };
         gameOver = false;
-        
-        if (is3DView) { // If restarting while in 3D view
-            if (!threeJSInitialized) {
-                initThreeJS(); // Initialize core Three.js if it hasn't been yet
-            }
-            setup3DScene(); // Rebuild 3D maze geometry
-        }
-        // If restarting in 2D view, 3D scene will be built when toggling to 3D,
-        // due to threeDMazeNeedsRebuild flag.
+        is3D = false;
 
-        redrawCurrentView();
+        if (threeContainer) threeContainer.style.display = 'none';
+        canvas.style.display = 'block';
+        viewToggle.textContent = 'Switch to 3D View';
+
+        drawGame();
         
-        window.removeEventListener('keydown', handleKeyDown); 
+        window.removeEventListener('keydown', handleKeyDown);
         window.addEventListener('keydown', handleKeyDown);
+        
+        viewToggle.removeEventListener('click', toggleView);
+        viewToggle.addEventListener('click', toggleView);
     }
-    
-    toggleViewBtn.addEventListener('click', toggleViewMode);
-    restartBtn.addEventListener('click', init);
 
+    // A simple restart mechanism could be added, e.g., by calling init() again
+    // For now, just initialize on load
     init();
 });
