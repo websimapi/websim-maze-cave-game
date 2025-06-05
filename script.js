@@ -227,11 +227,34 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (gameOver) return;
-        switch (e.key) {
-            case 'ArrowUp': case 'w': movePlayer(-1, 0); e.preventDefault(); break;
-            case 'ArrowDown': case 's': movePlayer(1, 0); e.preventDefault(); break;
-            case 'ArrowLeft': case 'a': movePlayer(0, -1); e.preventDefault(); break;
-            case 'ArrowRight': case 'd': movePlayer(0, 1); e.preventDefault(); break;
+        
+        if (is3D) {
+            // Handle 3D movement
+            switch (e.key.toLowerCase()) {
+                case 'w': moveState.forward = true; e.preventDefault(); break;
+                case 's': moveState.backward = true; e.preventDefault(); break;
+                case 'a': moveState.left = true; e.preventDefault(); break;
+                case 'd': moveState.right = true; e.preventDefault(); break;
+            }
+        } else {
+            // Handle 2D movement
+            switch (e.key) {
+                case 'ArrowUp': case 'w': movePlayer(-1, 0); e.preventDefault(); break;
+                case 'ArrowDown': case 's': movePlayer(1, 0); e.preventDefault(); break;
+                case 'ArrowLeft': case 'a': movePlayer(0, -1); e.preventDefault(); break;
+                case 'ArrowRight': case 'd': movePlayer(0, 1); e.preventDefault(); break;
+            }
+        }
+    }
+
+    function handleKeyUp(e) {
+        if (is3D) {
+            switch (e.key.toLowerCase()) {
+                case 'w': moveState.forward = false; e.preventDefault(); break;
+                case 's': moveState.backward = false; e.preventDefault(); break;
+                case 'a': moveState.left = false; e.preventDefault(); break;
+                case 'd': moveState.right = false; e.preventDefault(); break;
+            }
         }
     }
 
@@ -241,6 +264,15 @@ document.addEventListener('DOMContentLoaded', () => {
     let threeContainer;
     let walls3D = [];
     let player3D, startMarker3D, endMarker3D;
+    
+    // 3D Movement state
+    let moveState = {
+        forward: false,
+        backward: false,
+        left: false,
+        right: false
+    };
+    const moveSpeed = 0.05;
 
     // Import Three.js modules
     let THREE, PointerLockControls;
@@ -364,9 +396,71 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function checkCollision(newPosition) {
+        const playerRadius = 0.3;
+        
+        for (let wall of walls3D) {
+            const wallBox = new THREE.Box3().setFromObject(wall);
+            const playerBox = new THREE.Box3().setFromCenterAndSize(
+                newPosition,
+                new THREE.Vector3(playerRadius * 2, playerRadius * 2, playerRadius * 2)
+            );
+            
+            if (wallBox.intersectsBox(playerBox)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function update3DMovement() {
+        if (!is3D || !controls.isLocked) return;
+        
+        const direction = new THREE.Vector3();
+        const right = new THREE.Vector3();
+        
+        camera.getWorldDirection(direction);
+        right.crossVectors(camera.up, direction).normalize();
+        
+        const moveVector = new THREE.Vector3();
+        
+        if (moveState.forward) moveVector.add(direction.multiplyScalar(moveSpeed));
+        if (moveState.backward) moveVector.add(direction.multiplyScalar(-moveSpeed));
+        if (moveState.left) moveVector.add(right.multiplyScalar(moveSpeed));
+        if (moveState.right) moveVector.add(right.multiplyScalar(-moveSpeed));
+        
+        if (moveVector.length() > 0) {
+            const newPosition = camera.position.clone().add(moveVector);
+            newPosition.y = 0.5; // Keep camera at fixed height
+            
+            if (!checkCollision(newPosition)) {
+                camera.position.copy(newPosition);
+                
+                // Play footstep sound occasionally
+                if (Math.random() < 0.05) {
+                    playSound('footstep');
+                }
+                
+                // Check win condition in 3D
+                const endX = endPos.c - MAZE_COLS / 2;
+                const endZ = endPos.r - MAZE_ROWS / 2;
+                const distanceToEnd = camera.position.distanceTo(new THREE.Vector3(endX, 0.5, endZ));
+                
+                if (distanceToEnd < 0.5 && !gameOver) {
+                    gameOver = true;
+                    messageEl.textContent = "You found the exit! Congratulations!";
+                    messageEl.style.color = END_COLOR;
+                    playSound('win');
+                    controls.unlock();
+                }
+            }
+        }
+    }
+
     function animate3D() {
         if (!is3D) return;
         
+        update3DMovement();
         renderer.render(scene, camera);
         requestAnimationFrame(animate3D);
     }
@@ -419,6 +513,9 @@ document.addEventListener('DOMContentLoaded', () => {
         player = { ...startPos };
         gameOver = false;
         is3D = false;
+        
+        // Reset movement state
+        moveState = { forward: false, backward: false, left: false, right: false };
 
         if (threeContainer) threeContainer.style.display = 'none';
         canvas.style.display = 'block';
@@ -427,7 +524,9 @@ document.addEventListener('DOMContentLoaded', () => {
         drawGame();
         
         window.removeEventListener('keydown', handleKeyDown);
+        window.removeEventListener('keyup', handleKeyUp);
         window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('keyup', handleKeyUp);
         
         viewToggle.removeEventListener('click', toggleView);
         viewToggle.addEventListener('click', toggleView);
